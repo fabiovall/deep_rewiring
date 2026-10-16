@@ -1,9 +1,12 @@
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 import numpy as np
 import numpy.random as rd
-from tensorflow.examples.tutorials.mnist import input_data
+import mnist_data as input_data
+import os
 import time
 import pickle
+
+tf.disable_v2_behavior()
 
 mnist = input_data.read_data_sets("../datasets/MNIST", one_hot=True)
 
@@ -77,7 +80,7 @@ def sample_matrix_specific_reconnection_number_for_global_fixed_connectivity(the
         with tf.control_dependencies([assert_upper_bound_check]):
             nb_reconnect = tf.maximum(0, max_total_connections - total_connected)
 
-            sample_split = tf.distributions.Categorical(probs=sampling_probs).sample(nb_reconnect)
+            sample_split = tf.random.categorical(tf.log([sampling_probs]), nb_reconnect)[0]
             is_class_i_list = [tf.equal(sample_split, i) for i in range(len(theta_list))]
             counts = [tf.reduce_sum(tf.cast(is_class_i, dtype=tf.int32)) for is_class_i in is_class_i_list]
             return counts
@@ -152,7 +155,7 @@ def rewiring(theta, nb_reconnect, epsilon=1e-12):
 
         # Apply the rewiring
         reconnect_vals = tf.fill(dims=[nb_reconnect], value=epsilon, name='InitValues')
-        reconnect_op = tf.scatter_nd_update(theta, reconnect_sample_coord, reconnect_vals, name='Reconnect')
+        reconnect_op = theta.scatter_nd_update(reconnect_sample_coord, reconnect_vals, name='Reconnect')
 
         with tf.control_dependencies([reconnect_op]):
             return tf.no_op('Rewiring')
@@ -279,6 +282,8 @@ weights_storage = {'weight_list': sess.run(weight_list),
                    'theta_list': sess.run(theta_list)}
 
 del sess
+
+os.makedirs('results', exist_ok=True)
 
 with open('results/deep_r_results.pickle', 'wb') as f:
     pickle.dump(results, f)

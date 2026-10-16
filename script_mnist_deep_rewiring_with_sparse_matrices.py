@@ -1,9 +1,12 @@
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 import numpy as np
 import numpy.random as rd
-from tensorflow.examples.tutorials.mnist import input_data
+import mnist_data as input_data
+import os
 import time
 import pickle
+
+tf.disable_v2_behavior()
 
 mnist = input_data.read_data_sets("../datasets/MNIST", one_hot=True)
 
@@ -233,6 +236,8 @@ weights_storage = {'weight_list': sess.run(weight_list),
                    'theta_list': sess.run(theta_list)}
 
 del sess
+
+os.makedirs('results', exist_ok=True)
 
 with open('results/deep_r_results.pickle', 'wb') as f:
     pickle.dump(results, f)

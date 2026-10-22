@@ -65,6 +65,28 @@ def load_config(path):
     return {}
 
 
+# Difficulty ordering for legend grouping
+_DIFFICULTY_ORDER = {'clean': 0, 'easy': 1, 'middle': 2, 'hard': 3, 'vhard': 4}
+_MODEL_ORDER = {'dRNN': 0, 'FC': 1}
+
+
+def _difficulty_sort_key(tag):
+    """
+    Return a sort key that groups runs by difficulty (dRNN and FC adjacent)
+    and orders difficulties from clean → vhard.
+    tag examples: 'exp7_easy', 'fc_hard', 'deep_r', 'fc_clean'
+    """
+    if tag == 'deep_r':
+        return (0, 0, 'dRNN_clean')   # clean dRNN (already plotted as 'clean')
+    if tag.startswith('exp7_'):
+        suffix = tag[len('exp7_'):]
+        return (_DIFFICULTY_ORDER.get(suffix, 99), 0, suffix)
+    if tag.startswith('fc_'):
+        suffix = tag[len('fc_'):]
+        return (_DIFFICULTY_ORDER.get(suffix, 99), 1, suffix)
+    return (99, 99, tag)
+
+
 def difficulty_label(cfg, tag_hint=None):
     """
     Short human-readable label for a difficulty run.
@@ -107,16 +129,20 @@ CLEAN_COLOR = 'C0'
 # Main plot function
 # ---------------------------------------------------------------------------
 
+def _is_fc(tag):
+    return tag.startswith('fc_')
+
+
 def plot_comparison(clean, aug_runs, every=100,
                     out='results/exp7_comparison.png',
                     title=None, ylim_bottom=None, ylim_top=1.01,
                     loss_ylim_top=None):
     """
-    clean     : dict from load_results()  (single)
+    clean     : dict from load_results()  (single, dRNN clean baseline)
     aug_runs  : list of dicts, each with keys:
                 'data'   – dict from load_results()
                 'label'  – str, legend label
-                'tag'    – str, short tag (used in title)
+                'tag'    – str, short tag
     """
     s = slice(0, None, every)
 
@@ -128,16 +154,20 @@ def plot_comparison(clean, aug_runs, every=100,
 
     c_final = c_acc[-1]
 
-    # Collect final accuracies for the title
-    finals = [(a['data']['acc'][-1], a['label']) for a in aug_runs]
+    # Identify FC clean baseline (first fc_* run that is clean)
+    fc_clean_acc = None
+    fc_clean_it = None
+    for a in aug_runs:
+        if _is_fc(a['tag']) and 'clean' in a['tag']:
+            fc_clean_acc = a['data']['acc']
+            fc_clean_it = a['data']['it']
+            break
 
+    # Build title with connectivity info
+    drnn_gconn = float(np.array(clean['gconn'])[-1]) * 100 if 'gconn' in clean else float(np.mean(c_conn[-1])) * 100
     if title is None:
-        lines = ["dRNN  |  Clean vs  Augmented MNIST  (Experiment #7)"]
-        lines.append('dRNN_clean: {:.3f}'.format(c_final))
-        for fval, flabel in finals:
-            delta = fval - c_final
-            lines.append('{}: {:.3f}  (Δ {:+.3f})'.format(flabel, fval, delta))
-        title = '\n'.join(lines)
+        title = ('dRNN ({:.1f}% conn.)  &  FC (100% conn.)  |  '
+                 'Clean vs Augmented MNIST  (Exp. #7)').format(drnn_gconn)
 
     n_panels = 3
     fig, ax = plt.subplots(1, n_panels, figsize=(15, 5.5))
@@ -175,29 +205,82 @@ def plot_comparison(clean, aug_runs, every=100,
         loss_ylim_top = float(np.concatenate(all_losses).max()) * 1.1
     ax[1].set_ylim(0, loss_ylim_top)
 
-    # ── Panel 2: per-layer connectivity ─────────────────────────────────
-    layer_names = ['Layer 1 (784×300)', 'Layer 2 (300×100)', 'Output (100×10)']
-    lines_conn = []
-    for i_layer, name in enumerate(layer_names):
-        ax[2].plot(c_it[s], c_conn[s, i_layer] * 100,
-                   color='gray', alpha=0.55, lw=0.8, ls='--')
-        for i, a in enumerate(aug_runs):
-            d = a['data']
-            color = AUG_COLORS[i % len(AUG_COLORS)]
-            ax[2].plot(d['it'][s], d['conn'][s, i_layer] * 100,
-                       color=color, alpha=0.65, lw=0.8, ls='-')
-    ax[2].set_title('Active connections (% of possible)')
-    ax[2].set_yscale('log')
+    # ── Panel 2: grouped bar chart of final accuracies ──────────────────
+    # Group by difficulty: (label, drnn_acc, fc_acc)
+    difficulty_groups = {}
+    # dRNN clean
+    difficulty_groups.setdefault('Clean', {'dRNN': c_final, 'FC': None})
+    # FC clean
+    if fc_clean_acc is not None:
+        difficulty_groups['Clean']['FC'] = float(fc_clean_acc[-1])
+    for a in aug_runs:
+        d = a['data']
+        tag = a['tag']
+        # Extract difficulty suffix
+        if tag.startswith('exp7_'):
+            suffix = tag[len('exp7_'):]
+            group_name = suffix.capitalize()
+            difficulty_groups.setdefault(group_name, {'dRNN': None, 'FC': None})
+            difficulty_groups[group_name]['dRNN'] = float(d['acc'][-1])
+        elif tag.startswith('fc_'):
+            suffix = tag[len('fc_'):]
+            if suffix == 'clean':
+                group_name = 'Clean'
+            else:
+                group_name = suffix.capitalize()
+            difficulty_groups.setdefault(group_name, {'dRNN': None, 'FC': None})
+            difficulty_groups[group_name]['FC'] = float(d['acc'][-1])
+
+    # Order: Clean, Easy, Middle, Hard, Vhard
+    order = ['Clean', 'Easy', 'Middle', 'Hard', 'Vhard']
+    groups = [g for g in order if g in difficulty_groups]
+
+    bar_labels = []
+    drnn_vals = []
+    fc_vals = []
+    for g in groups:
+        bar_labels.append(g)
+        drnn_vals.append(difficulty_groups[g]['dRNN'] if difficulty_groups[g]['dRNN'] is not None else 0)
+        fc_vals.append(difficulty_groups[g]['FC'] if difficulty_groups[g]['FC'] is not None else 0)
+
+    # Convert to percentage
+    drnn_pct = [v * 100 for v in drnn_vals]
+    fc_pct = [v * 100 for v in fc_vals]
+
+    x = np.arange(len(groups))
+    bar_width = 0.35
+    bars_drnn = ax[2].bar(x - bar_width/2, drnn_pct, bar_width,
+                          color=CLEAN_COLOR, edgecolor='black', lw=0.5,
+                          label='dRNN')
+    bars_fc = ax[2].bar(x + bar_width/2, fc_pct, bar_width,
+                        color='C1', edgecolor='black', lw=0.5,
+                        label='FC')
+
+    # Add value labels on top of bars
+    for bar, val in zip(bars_drnn, drnn_pct):
+        ax[2].text(bar.get_x() + bar.get_width()/2, val + 0.5,
+                   '{:.1f}'.format(val), ha='center', va='bottom', fontsize=7)
+    for bar, val in zip(bars_fc, fc_pct):
+        ax[2].text(bar.get_x() + bar.get_width()/2, val + 0.5,
+                   '{:.1f}'.format(val), ha='center', va='bottom', fontsize=7)
+
+    ax[2].set_xticks(x)
+    ax[2].set_xticklabels(bar_labels, fontsize=8)
+    ax[2].set_title('Final test accuracy (%)')
+    ax[2].set_ylim(0, 108)
+    ax[2].set_xlim(-0.6, len(groups) - 0.4)
+    ax[2].set_ylabel('Accuracy (%)')
+    ax[2].legend(fontsize=7, loc='upper right')
 
     # ── Common styling ──────────────────────────────────────────────────
-    for a_ax in ax:
+    for a_ax in ax[:2]:
         a_ax.set_xlabel('Training iteration')
         a_ax.grid(alpha=0.3)
         for e in np.where(np.diff(c_epoch))[0]:
             a_ax.axvline(c_it[e], color='gray', lw=0.5, ls=':')
+    ax[2].grid(alpha=0.3, axis='y')
 
     # ── Single shared legend below the figure ───────────────────────────
-    # Use the accuracy-panel lines (they carry the most informative labels).
     fig.legend(handles=lines_acc,
                loc='lower center',
                bbox_to_anchor=(0.5, -0.02),
@@ -273,6 +356,9 @@ def main():
         tag    = os.path.splitext(os.path.basename(ap))[0].replace('results/','').replace('_results','')
         label  = difficulty_label(cfg, tag_hint=tag)
         aug_runs.append({'data': data, 'label': label, 'tag': tag, 'cfg': cfg})
+
+    # Sort so that dRNN and FC at each difficulty are adjacent in the legend
+    aug_runs.sort(key=lambda r: _difficulty_sort_key(r['tag']))
 
     plot_comparison(
         clean, aug_runs,

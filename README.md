@@ -275,22 +275,21 @@ Three panels: test accuracy (y-axis 0–1), test loss, and per-layer connectivit
 
 ### Results (10-epoch full runs)
 
-| Tag | Model | Difficulty | Final acc | Global connectivity |
-|---|---|---|---|---|
-| `deep_r` | DEEP R | clean MNIST | 96.6 % | 1.33 % |
-| `fc_clean` | Dense FC | clean MNIST | 97.1 % | 100 % |
-| `exp7_easy` | DEEP R | ±5°, σ=0.02 | 96.7 % | 1.33 % |
-| `exp7_middle` | DEEP R | ±15°, σ=0.05 | 94.2 % | 1.33 % |
-| `exp7_hard` | DEEP R | ±30°, σ=0.10 | 88.9 % | 1.33 % |
-| `exp7_vhard` | DEEP R | ±45°, σ=0.20 | 82.5 % | 1.33 % |
-| `fc_easy` | Dense FC | ±5°, σ=0.02 | 97.1 % | 100 % |
-| `fc_middle` | Dense FC | ±15°, σ=0.05 | 95.5 % | 100 % |
-| `fc_hard` | Dense FC | ±30°, σ=0.10 | 91.2 % | 100 % |
-| `fc_vhard` | Dense FC | ±45°, σ=0.20 | 89.2 % | 100 % |
+| Difficulty | dRNN acc | Δ dRNN | FC acc | Δ FC | Δ (FC − dRNN) |
+|---|---|---|---|---|---|
+| Clean | 96.6 % | — | 97.1 % | — | +0.5 pp |
+| Easy (±5°, σ=0.02) | 96.7 % | +0.1 pp | 97.1 % | 0.0 pp | +0.4 pp |
+| Middle (±15°, σ=0.05) | 94.2 % | −2.4 pp | 95.5 % | −1.6 pp | +1.3 pp |
+| Hard (±30°, σ=0.10) | 88.9 % | −7.7 pp | 91.2 % | −5.9 pp | +2.3 pp |
+| Very hard (±45°, σ=0.20) | 82.5 % | −14.1 pp | 89.2 % | −7.9 pp | +6.7 pp |
 
-DEEP R maintains 1.33 % connectivity under all difficulty settings. The FC baselines
-(no sparsity constraint) are the upper-bound reference at each difficulty level.
-At easy/middle difficulty the two models are close; at hard and very-hard
-difficulty the gap widens (DEEP R: −5.4 pp and −10.9 pp vs clean, FC: −2.3 pp
-and −5.9 pp), showing that the sparse network is more affected by input
-perturbation than the dense one, as expected.
+dRNN: `deep_r` (clean), `exp7_easy`, `exp7_middle`, `exp7_hard`, `exp7_vhard`
+FC: `fc_clean`, `fc_easy`, `fc_middle`, `fc_hard`, `fc_vhard`
+
+**Δ dRNN** and **Δ FC** are measured against each model's own clean baseline
+(96.6 % and 97.1 % respectively). DEEP R maintains 1.33 % connectivity under
+all difficulty settings. At easy difficulty both models are essentially
+unaffected; from middle onward the sparse network degrades faster than the
+dense one — at very-hard difficulty dRNN drops 14.1 pp while FC drops only
+7.9 pp, showing that the sparse network is more sensitive to input
+perturbation than its dense counterpart.

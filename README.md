@@ -169,9 +169,13 @@ bash run_full_comparison.sh
 ```
 
 This activates the `deep_rewiring` conda environment, checks dependencies,
-runs all 8 experiments (DEEP R + FC at ±5°, ±15°, ±30°, ±45°), skips any
-that already have a pickle in `results/`, and generates
+runs all 9 experiments (clean FC, then DEEP R + FC at ±5°, ±15°, ±30°, ±45°),
+skips any that already have a pickle in `results/`, and generates
 `results/exp7_full_comparison.png` at the end.
+
+> **Note:** `fc_vhard` (±45°, σ=0.20) uses `lr=0.01` instead of the default
+> `lr=0.5`. At the higher learning rate the dense network gets stuck at the
+> uniform-loss basin (`loss ≈ ln(10) = 2.303`) and never learns.
 
 **Individual runs** (for re-running a single experiment):
 
@@ -253,10 +257,10 @@ python plot_comparison.py \
 
 **Output image** (default: `results/exp7_comparison.png`, override with `--out`)
 
-Three panels: test accuracy, test loss, and per-layer connectivity.
-- Clean MNIST: blue (solid)
-- Each augmented run gets a distinct colour (red, green, purple, …)
-- A single shared legend is placed below the figure, showing run tag + final accuracy
+Three panels: test accuracy (y-axis 0–1), test loss, and per-layer connectivity.
+- `dRNN_clean`: blue (solid)
+- `dRNN_*` (DEEP R) and `FC_*` (dense) runs each get a distinct colour
+- A single shared legend is placed below the figure, showing label + final accuracy
 - Connectivity panel: clean = grey dashed, augmented = coloured solid lines
 
 **Extra flags:**
@@ -264,8 +268,8 @@ Three panels: test accuracy, test loss, and per-layer connectivity.
 | Flag | Default | Description |
 |---|---|---|
 | `--every` | `1` | Plot every N-th data point (thins the curves) |
-| `--ylim-bottom` | `0.80` | Lower y-limit for the accuracy panel |
-| `--ylim-top` | `1.01` | Upper y-limit for the accuracy panel |
+| `--ylim-bottom` | `None` (0.0) | Lower y-limit for the accuracy panel |
+| `--ylim-top` | `None` (1.0) | Upper y-limit for the accuracy panel |
 | `--loss-ylim-top` | auto | Upper y-limit for the loss panel |
 | `--out` | `results/exp7_comparison.png` | Output PNG path |
 
@@ -274,15 +278,19 @@ Three panels: test accuracy, test loss, and per-layer connectivity.
 | Tag | Model | Difficulty | Final acc | Global connectivity |
 |---|---|---|---|---|
 | `deep_r` | DEEP R | clean MNIST | 96.6 % | 1.33 % |
-| `fc_clean` | Dense FC | clean MNIST | — | 100 % |
-| `exp7_easy` | DEEP R | ±5°, σ=0.02 | — | 1.33 % |
-| `exp7_middle` | DEEP R | ±15°, σ=0.05 | 93.6 % | 1.33 % |
+| `fc_clean` | Dense FC | clean MNIST | 97.1 % | 100 % |
+| `exp7_easy` | DEEP R | ±5°, σ=0.02 | 96.7 % | 1.33 % |
+| `exp7_middle` | DEEP R | ±15°, σ=0.05 | 94.2 % | 1.33 % |
 | `exp7_hard` | DEEP R | ±30°, σ=0.10 | 88.9 % | 1.33 % |
-| `exp7_vhard` | DEEP R | ±45°, σ=0.20 | — | 1.33 % |
-| `fc_easy` | Dense FC | ±5°, σ=0.02 | — | 100 % |
-| `fc_middle` | Dense FC | ±15°, σ=0.05 | — | 100 % |
-| `fc_hard` | Dense FC | ±30°, σ=0.10 | — | 100 % |
-| `fc_vhard` | Dense FC | ±45°, σ=0.20 | — | 100 % |
+| `exp7_vhard` | DEEP R | ±45°, σ=0.20 | 82.5 % | 1.33 % |
+| `fc_easy` | Dense FC | ±5°, σ=0.02 | 97.1 % | 100 % |
+| `fc_middle` | Dense FC | ±15°, σ=0.05 | 95.5 % | 100 % |
+| `fc_hard` | Dense FC | ±30°, σ=0.10 | 91.2 % | 100 % |
+| `fc_vhard` | Dense FC | ±45°, σ=0.20 | 89.2 % | 100 % |
 
 DEEP R maintains 1.33 % connectivity under all difficulty settings. The FC baselines
 (no sparsity constraint) are the upper-bound reference at each difficulty level.
+At easy/middle difficulty the two models are close; at hard and very-hard
+difficulty the gap widens (DEEP R: −5.4 pp and −10.9 pp vs clean, FC: −2.3 pp
+and −5.9 pp), showing that the sparse network is more affected by input
+perturbation than the dense one, as expected.

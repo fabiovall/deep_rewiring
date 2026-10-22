@@ -5,6 +5,10 @@ This repository provides basic implementations of Deep Rewiring in Tensorflow. T
 - `script_mnist_deep_rewiring_with_global_constraint.py`: Same with a constraint on the global number of connections 
 - `script_mnist_deep_rewiring_with_sparse_matrices.py`: Same as the first script, but using the tensorflow sparse matrices
 - `script_mnist_soft_deep_rewiring.py`: An implementation of the soft-DEEP R algorithm used as baseline in our paper
+- `script_mnist_deep_rewiring_exp7.py`: **Experiment #7** — DEEP R trained on MNIST with per-image random rotation and additive Gaussian noise added on-the-fly during training, evaluated on a fixed difficulty-augmented test set
+- `script_mnist_fully_connected_exp7.py`: **Experiment #7 baseline** — same architecture, augmentation, and evaluation as the DEEP R script, but with a fully-connected (dense) network and no rewiring. Serves as the upper-bound reference.
+- `run_full_comparison.sh`: Self-contained script that runs the full Experiment #7 battery (DEEP R + FC at 4 difficulty levels) and generates the final comparison plot. Handles conda activation, dependency checks, and skip-if-already-done logic.
+- `plot_comparison.py`: Plots one or more Experiment #7 (augmented) runs next to the clean-MNIST baseline in a single three-panel figure. Auto-detects all `results/exp7*_results.pickle` and `results/fc*_results.pickle` files, or accept any number of `--aug` flags.
 
 
 
@@ -124,3 +128,161 @@ Each script was run on a reduced dataset. All four trained, the number of active
   mkdir -p ../datasets/MNIST
   curl -L -o ../datasets/MNIST/mnist.npz https://storage.googleapis.com/tensorflow/tf-keras-datasets/mnist.npz
   ```
+
+---
+
+## Experiment #7 — Task Difficulty (Rotated / Noisy MNIST)
+
+**Goal:** Test how well DEEP R retains its ability to stay sparse and converge when the input distribution is perturbed. Every training image is independently rotated by a random angle and corrupted with additive Gaussian noise; evaluation is done on a single fixed difficulty-augmented test set so results are comparable across runs.
+
+### Files
+
+| File | Role |
+|---|---|
+| `augment.py` | Rotation + Gaussian noise utilities for flat 784-vectors. Uses `scipy.ndimage.rotate` (pure-numpy fallback included). |
+| `script_mnist_deep_rewiring_exp7.py` | Full DEEP R training loop with on-the-fly augmentation. Same architecture (784-300-100-10) and hyper-parameters as the base script. |
+| `script_mnist_fully_connected_exp7.py` | Dense (no rewiring) baseline: same architecture, augmentation, learning-rate schedule, and fixed eval set. Outputs the same pickle schema, so it plugs straight into `plot_comparison.py`. |
+| `run_full_comparison.sh` | Runs the full battery: DEEP R and FC at 4 difficulty levels (±5°, ±15°, ±30°, ±45°), skips already-completed runs, then auto-generates the comparison plot. |
+
+### Augmentation pipeline
+
+- **Training (every mini-batch):** each image gets an independent angle ~ U(−max_angle, +max_angle) and noise ~ N(0, noise_sigma²), then is clipped to [0, 1].
+- **Evaluation (fixed test set):** all 10 000 test images are rotated once by the fixed `eval_angle` and corrupted with fixed `eval_noise_sigma` noise, then held constant for the entire run.
+
+### Extra flags (beyond the base script)
+
+| Flag | Default | Description |
+|---|---|---|
+| `--max_angle` | `15.0` | Per-image rotation bound in degrees (training); uniform in [−max, +max] |
+| `--noise_sigma` | `0.05` | Std-dev of additive Gaussian noise (training) |
+| `--eval_angle` | `15.0` | Fixed rotation angle for the evaluation test set |
+| `--eval_noise_sigma` | `0.05` | Fixed noise std-dev for the evaluation test set |
+| `--rng_seed` | `42` | Seed for both the training RNG and the fixed test-set augmentation |
+| `--tag` | `exp7` | Prefix for all output pickle files |
+
+### Running
+
+**One-command full comparison** (recommended):
+
+```bash
+bash run_full_comparison.sh
+```
+
+This activates the `deep_rewiring` conda environment, checks dependencies,
+runs all 8 experiments (DEEP R + FC at ±5°, ±15°, ±30°, ±45°), skips any
+that already have a pickle in `results/`, and generates
+`results/exp7_full_comparison.png` at the end.
+
+**Individual runs** (for re-running a single experiment):
+
+```bash
+conda activate deep_rewiring
+
+# DEEP R — easy (±5°, σ=0.02)
+python script_mnist_deep_rewiring_exp7.py \
+  --n_epochs=10 --batch=10 --print_every=100 \
+  --max_angle=5 --noise_sigma=0.02 \
+  --eval_angle=5 --eval_noise_sigma=0.02 --tag=exp7_easy
+
+# DEEP R — middle (±15°, σ=0.05)
+python script_mnist_deep_rewiring_exp7.py \
+  --n_epochs=10 --batch=10 --print_every=100 \
+  --max_angle=15 --noise_sigma=0.05 \
+  --eval_angle=15 --eval_noise_sigma=0.05 --tag=exp7_middle
+
+# DEEP R — hard (±30°, σ=0.10)
+python script_mnist_deep_rewiring_exp7.py \
+  --n_epochs=10 --batch=10 --print_every=100 \
+  --max_angle=30 --noise_sigma=0.1 \
+  --eval_angle=30 --eval_noise_sigma=0.1 --tag=exp7_hard
+
+# DEEP R — very hard (±45°, σ=0.20)
+python script_mnist_deep_rewiring_exp7.py \
+  --n_epochs=10 --batch=10 --print_every=100 \
+  --max_angle=45 --noise_sigma=0.2 \
+  --eval_angle=45 --eval_noise_sigma=0.2 --tag=exp7_vhard
+
+# Fully-connected baseline — same difficulty flags, no rewiring
+python script_mnist_fully_connected_exp7.py \
+  --n_epochs=10 --batch=10 --print_every=100 \
+  --max_angle=15 --noise_sigma=0.05 \
+  --eval_angle=15 --eval_noise_sigma=0.05 --tag=fc_middle
+```
+
+Both scripts accept the same difficulty flags: `--max_angle`, `--noise_sigma`, `--eval_angle`, `--eval_noise_sigma`, `--rng_seed`, `--tag`. The FC script additionally supports `--l2` for L2 weight decay (off by default).
+
+### Output
+
+Results are written to `results/` with the `--tag` prefix:
+
+- `results/{tag}_results.pickle` — per-step training metrics (same schema as the base script)
+- `results/{tag}_final_weights.pickle` — final weight and theta matrices
+- `results/{tag}_config.pickle` — full hyper-parameter record for the run
+
+To plot a single run alone:
+
+```bash
+python plot_results.py results/exp7_middle_results.pickle
+```
+
+To plot all runs side-by-side (auto-detects all `exp7*` and `fc*` pickles, excludes `*smoke*`):
+
+```bash
+python plot_comparison.py
+```
+
+Or explicitly:
+
+```bash
+python plot_comparison.py \
+    --clean  results/deep_r_results.pickle \
+    --aug    results/fc_clean_results.pickle \
+    --aug    results/exp7_easy_results.pickle \
+    --aug    results/exp7_middle_results.pickle \
+    --aug    results/exp7_hard_results.pickle \
+    --aug    results/exp7_vhard_results.pickle \
+    --aug    results/fc_easy_results.pickle \
+    --aug    results/fc_middle_results.pickle \
+    --aug    results/fc_hard_results.pickle \
+    --aug    results/fc_vhard_results.pickle \
+    --out    results/exp7_full_comparison.png
+```
+
+`run_full_comparison.sh` does this automatically at the end, saving to
+`results/exp7_full_comparison.png`.
+
+**Output image** (default: `results/exp7_comparison.png`, override with `--out`)
+
+Three panels: test accuracy, test loss, and per-layer connectivity.
+- Clean MNIST: blue (solid)
+- Each augmented run gets a distinct colour (red, green, purple, …)
+- A single shared legend is placed below the figure, showing run tag + final accuracy
+- Connectivity panel: clean = grey dashed, augmented = coloured solid lines
+
+**Extra flags:**
+
+| Flag | Default | Description |
+|---|---|---|
+| `--every` | `1` | Plot every N-th data point (thins the curves) |
+| `--ylim-bottom` | `0.80` | Lower y-limit for the accuracy panel |
+| `--ylim-top` | `1.01` | Upper y-limit for the accuracy panel |
+| `--loss-ylim-top` | auto | Upper y-limit for the loss panel |
+| `--out` | `results/exp7_comparison.png` | Output PNG path |
+
+### Results (10-epoch full runs)
+
+| Tag | Model | Difficulty | Final acc | Global connectivity |
+|---|---|---|---|---|
+| `deep_r` | DEEP R | clean MNIST | 96.6 % | 1.33 % |
+| `fc_clean` | Dense FC | clean MNIST | — | 100 % |
+| `exp7_easy` | DEEP R | ±5°, σ=0.02 | — | 1.33 % |
+| `exp7_middle` | DEEP R | ±15°, σ=0.05 | 93.6 % | 1.33 % |
+| `exp7_hard` | DEEP R | ±30°, σ=0.10 | 88.9 % | 1.33 % |
+| `exp7_vhard` | DEEP R | ±45°, σ=0.20 | — | 1.33 % |
+| `fc_easy` | Dense FC | ±5°, σ=0.02 | — | 100 % |
+| `fc_middle` | Dense FC | ±15°, σ=0.05 | — | 100 % |
+| `fc_hard` | Dense FC | ±30°, σ=0.10 | — | 100 % |
+| `fc_vhard` | Dense FC | ±45°, σ=0.20 | — | 100 % |
+
+DEEP R maintains 1.33 % connectivity under all difficulty settings. The FC baselines
+(no sparsity constraint) are the upper-bound reference at each difficulty level.

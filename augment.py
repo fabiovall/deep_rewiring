@@ -1,10 +1,12 @@
-"""On-the-fly rotation + noise augmentation for MNIST (flat 784-vectors).
+"""On-the-fly rotation + noise augmentation for flat image vectors.
 
-Experiment #7 — DEEP R under task difficulty (rotated / noisy MNIST).
+Experiment #7 — DEEP R under task difficulty (rotated / noisy images).
 
-All functions accept and return flat arrays of shape (N, 784) in [0, 1].
-Rotation is performed in 28x28 image space with zero-fill outside the
-rotated square, then the image is re-flattened.
+All functions accept and return flat arrays of shape (N, C*H*W) in [0, 1].
+Rotation is performed in image space (HxW, applied per channel) with
+zero-fill outside the rotated square, then the image is re-flattened.
+
+Works for MNIST (28x28, C=1) and CIFAR-10 (32x32x3, C=3).
 """
 
 import numpy as np
@@ -49,17 +51,47 @@ def rotate_flat(images_flat, angle_deg):
 
     Parameters
     ----------
-    images_flat : (N, 784) array, values in [0, 1]
+    images_flat : (N, C*H*W) array, values in [0, 1]. H and W must be equal.
+                  C is inferred as the leading channel dimension:
+                  (N, H*W) for grayscale, (N, C*H*W) for colour.
     angle_deg   : float, rotation angle in degrees (counter-clockwise)
 
     Returns
     -------
-    (N, 784) rotated images, values clipped to [0, 1].
+    (N, C*H*W) rotated images, values clipped to [0, 1].
     """
-    imgs = images_flat.reshape(-1, 28, 28)
+    n = images_flat.shape[0]
+    flat_size = images_flat.shape[1]
+
+    # Find (c, side) such that c * side * side == flat_size.
+    # Prefer c == 1 (grayscale); otherwise the smallest c > 1 (e.g. RGB).
+    c, side = None, None
+    for cand_c in range(1, flat_size + 1):
+        rem = flat_size // cand_c
+        if cand_c * rem != flat_size:
+            continue
+        s = int(round(rem ** 0.5))
+        if s * s == rem:
+            c, side = cand_c, s
+            break
+
+    if c is None:
+        raise ValueError(f"Cannot infer image shape from flat size {flat_size}")
+
+    if c == 1:
+        # Grayscale: (N, H*W)
+        imgs = images_flat.reshape(n, side, side)
+        out = np.empty_like(imgs)
+        for i in range(n):
+            out[i] = _rotate_image_2d(imgs[i], angle_deg)
+        return out.reshape(images_flat.shape).clip(0, 1)
+
+    # Colour: (N, C*H*W) with C channels of equal HxW.
+    imgs = images_flat.reshape(n, c, side, side)
     out = np.empty_like(imgs)
-    for i in range(imgs.shape[0]):
-        out[i] = _rotate_image_2d(imgs[i], angle_deg)
+    for i in range(n):
+        for ch in range(c):
+            out[i, ch] = _rotate_image_2d(imgs[i, ch], angle_deg)
     return out.reshape(images_flat.shape).clip(0, 1)
 
 
@@ -133,6 +165,5 @@ def build_fixed_test_set(images_flat, angle_deg=15.0, noise_sigma=0.05,
     rng = rd.RandomState(rng_seed)
     imgs = images_flat.copy()
     imgs = rotate_flat(imgs, angle_deg)
-    imgs = add_gaussian_noise(imgs, sigma=noise_sigma,
-                              )
+    imgs = add_gaussian_noise(imgs, sigma=noise_sigma, rng=rng)
     return imgs

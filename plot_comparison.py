@@ -74,15 +74,23 @@ def _difficulty_sort_key(tag):
     """
     Return a sort key that groups runs by difficulty (dRNN and FC adjacent)
     and orders difficulties from clean → vhard.
-    tag examples: 'exp7_easy', 'fc_hard', 'deep_r', 'fc_clean'
+    tag examples: 'exp7_easy', 'fc_hard', 'deep_r', 'fc_clean',
+                  'cifar_exp7_easy', 'cifar_fc_hard'
     """
-    if tag == 'deep_r':
+    # Strip an optional dataset prefix (e.g. 'cifar_') so the same logic
+    # works for both MNIST and CIFAR tags.
+    base = tag
+    for prefix in ('cifar_',):
+        if base.startswith(prefix):
+            base = base[len(prefix):]
+            break
+    if base == 'deep_r':
         return (0, 0, 'dRNN_clean')   # clean dRNN (already plotted as 'clean')
-    if tag.startswith('exp7_'):
-        suffix = tag[len('exp7_'):]
+    if base.startswith('exp7_'):
+        suffix = base[len('exp7_'):]
         return (_DIFFICULTY_ORDER.get(suffix, 99), 0, suffix)
-    if tag.startswith('fc_'):
-        suffix = tag[len('fc_'):]
+    if base.startswith('fc_'):
+        suffix = base[len('fc_'):]
         return (_DIFFICULTY_ORDER.get(suffix, 99), 1, suffix)
     return (99, 99, tag)
 
@@ -98,11 +106,16 @@ def difficulty_label(cfg, tag_hint=None):
         config pickle does not contain a 'tag' field.
     """
     tag = cfg.get('tag') or tag_hint or 'aug'
-    # Rename tags for display
-    if tag.startswith('exp7_'):
-        tag = 'dRNN_' + tag[len('exp7_'):]
-    elif tag.startswith('fc_'):
-        tag = 'FC_' + tag[len('fc_'):]
+    # Rename tags for display (strip optional dataset prefix first)
+    base = tag
+    for prefix in ('cifar_',):
+        if base.startswith(prefix):
+            base = base[len(prefix):]
+            break
+    if base.startswith('exp7_'):
+        tag = 'dRNN_' + base[len('exp7_'):]
+    elif base.startswith('fc_'):
+        tag = 'FC_' + base[len('fc_'):]
     ang = cfg.get('eval_angle', cfg.get('max_angle', None))
     sig = cfg.get('eval_noise_sigma', cfg.get('noise_sigma', None))
     if ang is not None and sig is not None:
@@ -130,7 +143,7 @@ CLEAN_COLOR = 'C0'
 # ---------------------------------------------------------------------------
 
 def _is_fc(tag):
-    return tag.startswith('fc_')
+    return tag.startswith('fc_') or tag.startswith('cifar_fc_')
 
 
 def plot_comparison(clean, aug_runs, every=100,
@@ -165,9 +178,11 @@ def plot_comparison(clean, aug_runs, every=100,
 
     # Build title with connectivity info
     drnn_gconn = float(np.array(clean['gconn'])[-1]) * 100 if 'gconn' in clean else float(np.mean(c_conn[-1])) * 100
+    # Detect dataset from the augmented run tags (default MNIST).
+    dataset = 'CIFAR-10' if any(a['tag'].startswith('cifar_') for a in aug_runs) else 'MNIST'
     if title is None:
         title = ('dRNN ({:.1f}% conn.)  &  FC (100% conn.)  |  '
-                 'Clean vs Augmented MNIST  (Exp. #7)').format(drnn_gconn)
+                 'Clean vs Augmented {}  (Exp. #7)').format(drnn_gconn, dataset)
 
     n_panels = 3
     fig, ax = plt.subplots(1, n_panels, figsize=(15, 5.5))
@@ -216,14 +231,20 @@ def plot_comparison(clean, aug_runs, every=100,
     for a in aug_runs:
         d = a['data']
         tag = a['tag']
+        # Strip optional dataset prefix (e.g. 'cifar_') before matching.
+        base = tag
+        for prefix in ('cifar_',):
+            if base.startswith(prefix):
+                base = base[len(prefix):]
+                break
         # Extract difficulty suffix
-        if tag.startswith('exp7_'):
-            suffix = tag[len('exp7_'):]
+        if base.startswith('exp7_'):
+            suffix = base[len('exp7_'):]
             group_name = suffix.capitalize()
             difficulty_groups.setdefault(group_name, {'dRNN': None, 'FC': None})
             difficulty_groups[group_name]['dRNN'] = float(d['acc'][-1])
-        elif tag.startswith('fc_'):
-            suffix = tag[len('fc_'):]
+        elif base.startswith('fc_'):
+            suffix = base[len('fc_'):]
             if suffix == 'clean':
                 group_name = 'Clean'
             else:
@@ -335,15 +356,22 @@ def main():
     if args.aug:
         aug_paths = args.aug
     else:
-        # Auto-detect all augmented pickles: exp7* and fc* (excludes *_smoke*)
+        # Auto-detect all augmented pickles: exp7* and fc* (excludes *_smoke*).
+        # CIFAR runs use the 'cifar_' prefix and are detected separately so
+        # they don't get mixed into an MNIST plot.
         aug_paths = []
         for pattern in ('results/exp7*_results.pickle', 'results/fc*_results.pickle'):
             aug_paths.extend(p for p in find_pickles(pattern) if 'smoke' not in p)
         if not aug_paths:
+            # Fall back to CIFAR runs if no MNIST runs are present.
+            for pattern in ('results/cifar_exp7*_results.pickle',
+                            'results/cifar_fc*_results.pickle'):
+                aug_paths.extend(p for p in find_pickles(pattern) if 'smoke' not in p)
+        if not aug_paths:
             raise SystemExit(
                 'No augmented results found in results/. '
-                'Run script_mnist_deep_rewiring_exp7.py first, '
-                'or pass --aug PATH explicitly.')
+                'Run script_mnist_deep_rewiring_exp7.py (or the CIFAR '
+                'equivalent) first, or pass --aug PATH explicitly.')
 
     print('Clean run:', clean_path)
     clean = load_results(clean_path)

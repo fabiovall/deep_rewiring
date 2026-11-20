@@ -1,4 +1,5 @@
 # Introduction to Deep Rewiring in tensorflow
+
 This repository provides basic implementations of Deep Rewiring in Tensorflow. The scripts are showing how to solve Mnist with networks that are kept very sparse all along the training (less than 2% of the connections are active), more advanced simulations and mathematical analyses are described in our paper. The four scripts are:  
 
 - `script_mnist_deep_rewiring.py`: Basic implementation of DEEP R where the number of non-zero in each individual matrix is contrained
@@ -7,10 +8,12 @@ This repository provides basic implementations of Deep Rewiring in Tensorflow. T
 - `script_mnist_soft_deep_rewiring.py`: An implementation of the soft-DEEP R algorithm used as baseline in our paper
 - `script_mnist_deep_rewiring_exp7.py`: **Experiment #7** — DEEP R trained on MNIST with per-image random rotation and additive Gaussian noise added on-the-fly during training, evaluated on a fixed difficulty-augmented test set
 - `script_mnist_fully_connected_exp7.py`: **Experiment #7 baseline** — same architecture, augmentation, and evaluation as the DEEP R script, but with a fully-connected (dense) network and no rewiring. Serves as the upper-bound reference.
+- `script_cifar_deep_rewiring_exp7.py`: **Experiment #7 (CIFAR-10)** — DEEP R trained on CIFAR-10 (3072-300-100-10) with the same augmentation pipeline.
+- `script_cifar_fully_connected_exp7.py`: **Experiment #7 (CIFAR-10) baseline** — dense network, same architecture and augmentation.
+- `cifar_data.py`: CIFAR-10 data loader (same interface as `mnist_data.py`).
 - `run_full_comparison.sh`: Self-contained script that runs the full Experiment #7 battery (DEEP R + FC at 4 difficulty levels) and generates the final comparison plot. Handles conda activation, dependency checks, and skip-if-already-done logic.
-- `plot_comparison.py`: Plots one or more Experiment #7 (augmented) runs next to the clean-MNIST baseline in a single three-panel figure. Auto-detects all `results/exp7*_results.pickle` and `results/fc*_results.pickle` files, or accept any number of `--aug` flags.
-
-
+- `plot_comparison.py`: Plots one or more Experiment #7 (augmented) runs next to the clean baseline in a single three-panel figure. Auto-detects all `results/exp7*_results.pickle`, `results/fc*_results.pickle`, and `results/cifar_*` files, or accepts any number of `--aug` flags.
+- `make_results_table.py`: Generates a results table PDF (and optional PNG) from the saved config pickles. Supports `--dataset mnist` and `--dataset cifar`.
 
 "Deep Rewiring: Training very sparse deep networks"  
 Guillaume Bellec, David Kappel, Wolfgang Maass, Robert Legenstein  
@@ -107,14 +110,15 @@ A default 10-epoch run of `script_mnist_deep_rewiring.py` reached 96.6% test acc
 - **All four scripts**
   - `import tensorflow as tf` became `import tensorflow.compat.v1 as tf`, followed by `tf.disable_v2_behavior()`, so the original graph/session code runs mostly unchanged.
   - The `results/` folder is now created before saving. Previously the save step would crash at the end of training if the folder was missing.
-- **`mnist_data.py` (new)**
+- `mnist_data.py` **(new)**
   - Replaces the removed `tensorflow.examples.tutorials.mnist.input_data` module with the same interface: `read_data_sets(...)`, `.train` / `.validation` / `.test`, `next_batch`, and `epochs_completed`.
   - Same split as the original loader: 55,000 training images, 5,000 validation images, and 10,000 test images, flattened to 784 float32 values in [0, 1] with one-hot labels.
   - MNIST is downloaded on the first run and cached in `../datasets/MNIST/mnist.npz`, relative to where the script is run.
-- **`script_mnist_deep_rewiring_with_global_constraint.py`**
+- `script_mnist_deep_rewiring_with_global_constraint.py`
   - `tf.distributions.Categorical(...).sample(n)` no longer exists. It was replaced with `tf.random.categorical(tf.log([probs]), n)[0]`, which samples from the same distribution.
-- **`script_mnist_deep_rewiring.py` and `script_mnist_deep_rewiring_with_global_constraint.py`**
+- `script_mnist_deep_rewiring.py` **and** `script_mnist_deep_rewiring_with_global_constraint.py`
   - In TF 2.21, `tf.scatter_nd_update(theta, ...)` crashes on the first training step with `Unknown bad indices handling attribute`. It was replaced with `theta.scatter_nd_update(...)`, which performs the same update.
+
 ### Verification
 
 Each script was run on a reduced dataset. All four trained, the number of active connections stayed fixed where DEEP R requires it, and the results pickles were written. `script_mnist_deep_rewiring.py` was also run for the full default 10 epochs, reaching 96.6% test accuracy. The other three scripts have not been run to completion yet.
@@ -123,7 +127,6 @@ Each script was run on a reduced dataset. All four trained, the number of active
 
 - **"Object was never used ... NumberOfConnectionCheck" warning at exit.** It appears in the basic and global-constraint scripts and is harmless. The original code builds a list of assert ops (`asserts`) that is never run, and TensorFlow 2 complains about that when the program exits.
 - **SSL certificate error when downloading MNIST.** This happens only outside conda, with the python.org Python installer on macOS, which doesn't install root certificates. Run `/Applications/Python 3.11/Install Certificates.command` once, or download the file manually:
-
   ```bash
   mkdir -p ../datasets/MNIST
   curl -L -o ../datasets/MNIST/mnist.npz https://storage.googleapis.com/tensorflow/tf-keras-datasets/mnist.npz
@@ -258,6 +261,7 @@ python plot_comparison.py \
 **Output image** (default: `results/exp7_comparison.png`, override with `--out`)
 
 Three panels: test accuracy (y-axis 0–1), test loss, and per-layer connectivity.
+
 - `dRNN_clean`: blue (solid)
 - `dRNN_*` (DEEP R) and `FC_*` (dense) runs each get a distinct colour
 - A single shared legend is placed below the figure, showing label + final accuracy
@@ -293,3 +297,142 @@ unaffected; from middle onward the sparse network degrades faster than the
 dense one — at very-hard difficulty dRNN drops 14.1 pp while FC drops only
 7.9 pp, showing that the sparse network is more sensitive to input
 perturbation than its dense counterpart.
+
+---
+
+## Experiment #7 — CIFAR-10 (Rotated / Noisy CIFAR)
+
+**Goal:** Repeat the MNIST difficulty experiment on CIFAR-10, a harder dataset with 32×32×3 colour images (3072 input dimensions). The architecture is 3072-300-100-10, with DEEP R connectivity fractions tuned for the larger input layer (1% / 3% / 30%).
+
+### Files
+
+| File | Role |
+|---|---|
+| `cifar_data.py` | CIFAR-10 data loader (same interface as `mnist_data.py`). Downloads and caches in `../datasets/CIFAR10/`. |
+| `script_cifar_deep_rewiring_exp7.py` | DEEP R training loop with on-the-fly augmentation. Same architecture and hyper-parameters as the MNIST script, adapted for 3072-dim input. |
+| `script_cifar_fully_connected_exp7.py` | Dense (no rewiring) baseline: same architecture, augmentation, and evaluation. Outputs the same pickle schema. |
+| `plot_comparison.py` | Same plotting script as MNIST; auto-detects `cifar_*` pickles or accepts explicit `--aug` flags. |
+| `make_results_table.py` | Generates the results table PDF (and optional PNG). Supports `--dataset cifar` and `--dataset mnist`. |
+
+### Running
+
+**Individual runs:**
+
+```bash
+conda activate deep_rewiring
+
+# DEEP R — clean
+python script_cifar_deep_rewiring_exp7.py \
+  --n_epochs=10 --batch=128 --print_every=200 \
+  --max_angle=0 --noise_sigma=0 \
+  --eval_angle=0 --eval_noise_sigma=0 --tag=cifar_deep_r_clean
+
+# DEEP R — easy (±5°, σ=0.02)
+python script_cifar_deep_rewiring_exp7.py \
+  --n_epochs=10 --batch=128 --print_every=200 \
+  --max_angle=5 --noise_sigma=0.02 \
+  --eval_angle=5 --eval_noise_sigma=0.02 --tag=cifar_exp7_easy
+
+# DEEP R — middle (±15°, σ=0.05)
+python script_cifar_deep_rewiring_exp7.py \
+  --n_epochs=10 --batch=128 --print_every=200 \
+  --max_angle=15 --noise_sigma=0.05 \
+  --eval_angle=15 --eval_noise_sigma=0.05 --tag=cifar_exp7_middle
+
+# DEEP R — hard (±30°, σ=0.10)
+python script_cifar_deep_rewiring_exp7.py \
+  --n_epochs=10 --batch=128 --print_every=200 \
+  --max_angle=30 --noise_sigma=0.1 \
+  --eval_angle=30 --eval_noise_sigma=0.1 --tag=cifar_exp7_hard
+
+# DEEP R — very hard (±45°, σ=0.20)
+python script_cifar_deep_rewiring_exp7.py \
+  --n_epochs=10 --batch=128 --print_every=200 \
+  --max_angle=45 --noise_sigma=0.2 \
+  --eval_angle=45 --eval_noise_sigma=0.2 --tag=cifar_exp7_vhard
+
+# Fully-connected baseline — clean
+python script_cifar_fully_connected_exp7.py \
+  --n_epochs=10 --batch=128 --print_every=200 \
+  --lr=0.1 \
+  --max_angle=0 --noise_sigma=0 \
+  --eval_angle=0 --eval_noise_sigma=0 --tag=cifar_fc_clean
+
+# Fully-connected baseline — easy (±5°, σ=0.02)
+python script_cifar_fully_connected_exp7.py \
+  --n_epochs=10 --batch=128 --print_every=200 \
+  --max_angle=5 --noise_sigma=0.02 \
+  --eval_angle=5 --eval_noise_sigma=0.02 --tag=cifar_fc_easy
+
+# Fully-connected baseline — middle (±15°, σ=0.05)
+python script_cifar_fully_connected_exp7.py \
+  --n_epochs=10 --batch=128 --print_every=200 \
+  --max_angle=15 --noise_sigma=0.05 \
+  --eval_angle=15 --eval_noise_sigma=0.05 --tag=cifar_fc_middle
+
+# Fully-connected baseline — hard (±30°, σ=0.10)
+python script_cifar_fully_connected_exp7.py \
+  --n_epochs=10 --batch=128 --print_every=200 \
+  --max_angle=30 --noise_sigma=0.1 \
+  --eval_angle=30 --eval_noise_sigma=0.1 --tag=cifar_fc_hard
+
+# Fully-connected baseline — very hard (±45°, σ=0.20)
+python script_cifar_fully_connected_exp7.py \
+  --n_epochs=10 --batch=128 --print_every=200 \
+  --max_angle=45 --noise_sigma=0.2 \
+  --eval_angle=45 --eval_noise_sigma=0.2 --tag=cifar_fc_vhard
+```
+
+> **Note:** The clean FC run uses `lr=0.1` instead of the default `lr=0.5`.
+> At the higher learning rate the dense network gets stuck at the
+> uniform-loss basin (`loss ≈ ln(10) = 2.303`) and never learns on clean
+> CIFAR-10. The augmented FC runs learn fine at `lr=0.5` because the
+> augmentation perturbs the loss landscape.
+
+**Generate the comparison plot:**
+
+```bash
+python plot_comparison.py \
+  --clean  results/cifar_deep_r_clean_results.pickle \
+  --aug    results/cifar_exp7_easy_results.pickle \
+  --aug    results/cifar_exp7_middle_results.pickle \
+  --aug    results/cifar_exp7_hard_results.pickle \
+  --aug    results/cifar_exp7_vhard_results.pickle \
+  --aug    results/cifar_fc_clean_results.pickle \
+  --aug    results/cifar_fc_easy_results.pickle \
+  --aug    results/cifar_fc_middle_results.pickle \
+  --aug    results/cifar_fc_hard_results.pickle \
+  --aug    results/cifar_fc_vhard_results.pickle \
+  --out    results/cifar_full_comparison.png
+```
+
+**Generate the results table:**
+
+```bash
+python make_results_table.py --dataset cifar \
+  --out results/cifar_results_table.pdf \
+  --png results/cifar_results_table.png
+```
+
+### Results (10-epoch full runs)
+
+| Difficulty | dRNN acc | Δ dRNN | FC acc | Δ FC | Δ (FC − dRNN) |
+|---|---|---|---|---|---|
+| Clean | 39.5 % | — | 48.4 % | — | +8.9 pp |
+| Easy (±5°, σ=0.02) | 31.5 % | −8.0 pp | 26.7 % | −21.7 pp | −4.8 pp |
+| Middle (±15°, σ=0.05) | 27.5 % | −12.0 pp | 31.5 % | −16.9 pp | +4.0 pp |
+| Hard (±30°, σ=0.10) | 23.3 % | −16.3 pp | 28.3 % | −20.1 pp | +5.0 pp |
+| Very hard (±45°, σ=0.20) | 22.2 % | −17.4 pp | 27.6 % | −20.7 pp | +5.4 pp |
+
+dRNN: `cifar_deep_r_clean`, `cifar_exp7_easy`, `cifar_exp7_middle`, `cifar_exp7_hard`, `cifar_exp7_vhard`
+FC: `cifar_fc_clean`, `cifar_fc_easy`, `cifar_fc_middle`, `cifar_fc_hard`, `cifar_fc_vhard`
+
+**Δ dRNN** and **Δ FC** are measured against each model's own clean baseline
+(39.5 % and 48.4 % respectively). DEEP R maintains 1.1 % connectivity under
+all difficulty settings. On CIFAR-10 the sparse network degrades less than
+the dense one at every augmented difficulty level — at very-hard difficulty
+dRNN drops 17.4 pp while FC drops 20.7 pp. This is the opposite of the MNIST
+result, where the sparse network was more sensitive. The difference is likely
+because CIFAR-10 is a harder task: the dense network overfits to the clean
+distribution and generalises poorly under perturbation, while the sparse
+network's inductive bias acts as a regulariser.

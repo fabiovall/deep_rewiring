@@ -580,3 +580,70 @@ To regenerate the report:
 ```bash
 python generate_final_report.py
 ```
+
+---
+
+## Experiment #8 — STL-10 v3 (Larger Architecture)
+
+**Goal:** Improve FC accuracy on STL-10 by using a larger architecture, similar to the CIFAR-10 v2 improvement. The architecture is 27648-4096-2048-1024-512-10 with BatchNorm after each hidden layer.
+
+### Files
+
+| File | Role |
+|---|---|
+| `script_stl10_deep_rewiring_exp7_v3.py` | DEEP R training loop with 4 hidden layers + BatchNorm |
+| `script_stl10_fully_connected_exp7_v3.py` | Dense (no rewiring) baseline: same architecture, augmentation, and evaluation |
+| `run_stl10_v3_experiments.py` | Runs all STL-10 v3 experiments (dRNN + FC at 5 difficulty levels) |
+| `STL10_V3_README.md` | Detailed documentation for STL-10 v3 |
+
+### Architecture
+
+- **Input:** 27648 (96×96×3 pixels)
+- **Hidden layers:** 4096 → 2048 → 1024 → 512 (with BatchNorm after each)
+- **Output:** 10
+- **Total parameters (dense):** ~120M
+- **DEEP R connectivity:** 1% / 3% / 3% / 3% / 30% (per layer)
+- **Optimizer:** Adam (lr=0.001, decay 0.5 per epoch)
+- **Batch size:** 128
+
+### Comparison with v2
+
+| Version | Architecture | Parameters | FC Clean Acc | dRNN Clean Acc |
+|---|---|---|---|---|
+| v2 | 27648-2048-1024-512-10 | ~60M | 29.8% | 32.9% |
+| v3 | 27648-4096-2048-1024-512-10 | ~120M | ~40-45% (expected) | ~45-50% (expected) |
+
+### Running
+
+**Run all STL-10 v3 experiments:**
+
+```bash
+python run_stl10_v3_experiments.py
+```
+
+**Individual runs:**
+
+```bash
+conda activate deep_rewiring
+
+# DEEP R — clean
+python script_stl10_deep_rewiring_exp7_v3.py \
+  --n_epochs=10 --batch=128 --print_every=200 \
+  --max_angle=0 --noise_sigma=0 \
+  --eval_angle=0 --eval_noise_sigma=0 --tag=stl10_v3_drnn_clean
+
+# Fully-connected baseline — clean
+python script_stl10_fully_connected_exp7_v3.py \
+  --n_epochs=10 --batch=128 --print_every=200 \
+  --max_angle=0 --noise_sigma=0 \
+  --eval_angle=0 --eval_noise_sigma=0 --tag=stl10_v3_fc_clean
+```
+
+### Expected Results
+
+Based on CIFAR-10 v2 results, the larger architecture should:
+- Improve FC accuracy from ~29.8% (v2) to ~40-45% (v3) = +10-15 pp
+- Improve dRNN accuracy from ~32.9% (v2) to ~45-50% (v3) = +12-17 pp
+- Narrow the gap between FC and dRNN
+
+**Estimated runtime:** 30-40 hours for all 10 experiments (larger architecture)

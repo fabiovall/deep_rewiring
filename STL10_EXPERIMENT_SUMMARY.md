@@ -4,6 +4,8 @@
 
 This document summarizes the STL-10 experiments for the Deep Rewiring project, completing the comprehensive study across three datasets (MNIST, CIFAR-10, STL-10).
 
+**Note:** This document covers STL-10 v2 (27648-2048-1024-512-10). For STL-10 v3 (larger architecture: 27648-4096-2048-1024-512-10), see `STL10_V3_README.md`.
+
 ## What Was Done
 
 ### 1. Created STL-10 Data Loader

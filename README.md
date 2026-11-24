@@ -436,3 +436,147 @@ result, where the sparse network was more sensitive. The difference is likely
 because CIFAR-10 is a harder task: the dense network overfits to the clean
 distribution and generalises poorly under perturbation, while the sparse
 network's inductive bias acts as a regulariser.
+
+---
+
+## Experiment #7 — STL-10 (Rotated / Noisy STL-10)
+
+**Goal:** Repeat the difficulty experiment on STL-10, the largest dataset (96×96×3 = 27648 input dimensions, 9× wider than CIFAR-10). The architecture is 27648-2048-1024-512-10 with BatchNorm after each hidden layer, using Adam optimizer.
+
+### Files
+
+| File | Role |
+|---|---|
+| `stl10_data.py` | STL-10 data loader (same interface as `cifar_data.py`). Downloads and caches in `../datasets/STL10/`. |
+| `script_stl10_deep_rewiring_exp7_v2.py` | DEEP R training loop with on-the-fly augmentation. 4-layer architecture with BatchNorm. |
+| `script_stl10_fully_connected_exp7_v2.py` | Dense (no rewiring) baseline: same architecture, augmentation, and evaluation. |
+| `run_stl10_remaining_experiments.py` | Runs all STL-10 experiments (dRNN + FC at 5 difficulty levels), skips already-completed runs. |
+
+### Architecture
+
+- **Input:** 27648 (96×96×3 pixels)
+- **Hidden layers:** 2048 → 1024 → 512 (with BatchNorm after each)
+- **Output:** 10
+- **Total parameters (dense):** ~62.5M
+- **DEEP R connectivity:** 1% / 3% / 3% / 30% (per layer)
+- **Optimizer:** Adam (lr=0.001, decay 0.5 per epoch)
+- **Batch size:** 128
+
+### Running
+
+**Run all STL-10 experiments:**
+
+```bash
+python run_stl10_remaining_experiments.py
+```
+
+This runs dRNN and FC at all 5 difficulty levels (clean, easy, middle, hard, very_hard), skipping any that already have results in `results/`.
+
+**Individual runs:**
+
+```bash
+conda activate deep_rewiring
+
+# DEEP R — clean
+python script_stl10_deep_rewiring_exp7_v2.py \
+  --n_epochs=10 --batch=128 --print_every=200 \
+  --max_angle=0 --noise_sigma=0 \
+  --eval_angle=0 --eval_noise_sigma=0 --tag=stl10_drnn_clean
+
+# DEEP R — easy (±5°, σ=0.02)
+python script_stl10_deep_rewiring_exp7_v2.py \
+  --n_epochs=10 --batch=128 --print_every=200 \
+  --max_angle=5 --noise_sigma=0.02 \
+  --eval_angle=5 --eval_noise_sigma=0.02 --tag=stl10_drnn_easy
+
+# DEEP R — middle (±15°, σ=0.05)
+python script_stl10_deep_rewiring_exp7_v2.py \
+  --n_epochs=10 --batch=128 --print_every=200 \
+  --max_angle=15 --noise_sigma=0.05 \
+  --eval_angle=15 --eval_noise_sigma=0.05 --tag=stl10_drnn_middle
+
+# DEEP R — hard (±30°, σ=0.10)
+python script_stl10_deep_rewiring_exp7_v2.py \
+  --n_epochs=10 --batch=128 --print_every=200 \
+  --max_angle=30 --noise_sigma=0.1 \
+  --eval_angle=30 --eval_noise_sigma=0.1 --tag=stl10_drnn_hard
+
+# DEEP R — very hard (±45°, σ=0.20)
+python script_stl10_deep_rewiring_exp7_v2.py \
+  --n_epochs=10 --batch=128 --print_every=200 \
+  --max_angle=45 --noise_sigma=0.2 \
+  --eval_angle=45 --eval_noise_sigma=0.2 --tag=stl10_drnn_very_hard
+
+# Fully-connected baseline — clean
+python script_stl10_fully_connected_exp7_v2.py \
+  --n_epochs=10 --batch=128 --print_every=200 \
+  --max_angle=0 --noise_sigma=0 \
+  --eval_angle=0 --eval_noise_sigma=0 --tag=stl10_fc_clean
+
+# Fully-connected baseline — easy (±5°, σ=0.02)
+python script_stl10_fully_connected_exp7_v2.py \
+  --n_epochs=10 --batch=128 --print_every=200 \
+  --max_angle=5 --noise_sigma=0.02 \
+  --eval_angle=5 --eval_noise_sigma=0.02 --tag=stl10_fc_easy
+
+# Fully-connected baseline — middle (±15°, σ=0.05)
+python script_stl10_fully_connected_exp7_v2.py \
+  --n_epochs=10 --batch=128 --print_every=200 \
+  --max_angle=15 --noise_sigma=0.05 \
+  --eval_angle=15 --eval_noise_sigma=0.05 --tag=stl10_fc_middle
+
+# Fully-connected baseline — hard (±30°, σ=0.10)
+python script_stl10_fully_connected_exp7_v2.py \
+  --n_epochs=10 --batch=128 --print_every=200 \
+  --max_angle=30 --noise_sigma=0.1 \
+  --eval_angle=30 --eval_noise_sigma=0.1 --tag=stl10_fc_hard
+
+# Fully-connected baseline — very hard (±45°, σ=0.20)
+python script_stl10_fully_connected_exp7_v2.py \
+  --n_epochs=10 --batch=128 --print_every=200 \
+  --max_angle=45 --noise_sigma=0.2 \
+  --eval_angle=45 --eval_noise_sigma=0.2 --tag=stl10_fc_very_hard
+```
+
+### Results (10-epoch full runs)
+
+| Difficulty | dRNN acc | Δ dRNN | FC acc | Δ FC | Δ (FC − dRNN) |
+|---|---|---|---|---|---|
+| Clean | 32.9 % | — | 29.8 % | — | −3.1 pp |
+| Easy (±5°, σ=0.02) | 38.8 % | +5.9 pp | 37.2 % | +7.4 pp | −1.6 pp |
+| Middle (±15°, σ=0.05) | 35.7 % | +2.8 pp | 34.1 % | +4.3 pp | −1.6 pp |
+| Hard (±30°, σ=0.10) | 36.0 % | +3.1 pp | 33.2 % | +3.4 pp | −2.8 pp |
+| Very hard (±45°, σ=0.20) | 33.0 % | +0.1 pp | 33.8 % | +4.0 pp | +0.8 pp |
+
+dRNN: `stl10_drnn_clean`, `stl10_drnn_easy`, `stl10_drnn_middle`, `stl10_drnn_hard`, `stl10_drnn_very_hard`
+FC: `stl10_fc_clean`, `stl10_fc_easy`, `stl10_fc_middle`, `stl10_fc_hard`, `stl10_fc_very_hard`
+
+**Δ dRNN** and **Δ FC** are measured against each model's own clean baseline
+(32.9 % and 29.8 % respectively). DEEP R maintains 1.09 % connectivity under
+all difficulty settings. On STL-10, the sparse network outperforms the dense
+network at clean and easy difficulty, and performs comparably at harder
+difficulties. Interestingly, both models show improved accuracy at easy
+difficulty compared to clean, suggesting that mild augmentation acts as a
+regularizer. At very-hard difficulty, the dense network slightly outperforms
+the sparse one (33.8 % vs 33.0 %), but the difference is small (0.8 pp).
+
+---
+
+## Comprehensive Report
+
+A comprehensive PDF report with theory, experimental setup, results, and analysis for all three datasets (MNIST, CIFAR-10, STL-10) is available:
+
+**`results/deep_rewiring_comprehensive_report.pdf`**
+
+The report includes:
+- Theory: DEEP R algorithm explanation and mathematical formulation
+- Experimental setup: datasets, architectures, difficulty levels, hyperparameters
+- Results tables: accuracy comparison for all 3 datasets × 5 difficulty levels
+- Comparison plots: bar charts showing dRNN vs FC performance
+- Analysis: key insights and conclusions
+
+To regenerate the report:
+
+```bash
+python generate_final_report.py
+```
